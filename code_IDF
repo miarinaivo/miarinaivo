@@ -1,0 +1,161 @@
+import pandas as pd
+import numpy as np
+import random as rd
+import psycopg2
+from sqlalchemy import create_engine
+path = "\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\"
+file = "injection.xlsx"
+injection = pd.read_excel(path+file)
+injection.rename(columns = {"FicheInjecter":"fiche_injecter", "ficheRetirer":"fiche_retirer", "cdCampagne":"cd_campagne", "date d'injection":"date", "CAMPAGNE CLIENT CORRESPONDANT":"campagne_client_correspondant"}, inplace=True)
+injection["date"] = [str(i).split()[0] for i in list(injection['date'])]
+
+conn = psycopg2.connect(
+    host = '10.216.15.247',
+    user = 'focus_admin',
+    password = 'focus_admin_pass#',
+    database = 'canalplus'
+)
+print("Connecter!")
+
+engine = create_engine('postgresql+psycopg2://focus_admin:focus_admin_pass#@10.216.15.247:5432/canalplus')
+injection.to_sql('injection_de_fiche', engine, schema = 'dim',if_exists='append',index=False )
+conn.close()
+
+
+def connexion_base(db_name,username,host,port,password):
+    """ Fonction pour se connecter à Postgresql """
+    connexion = psycopg2.connect(database=db_name,
+                              user=username,
+                              host=host,
+                              port=port,
+                              password=password
+                              )
+    return connexion
+
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE MAIS NE RETOURNE PAS DE CHOSE(UPDATE OU DELETE)
+def requete_sans_retour(requete_sql):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    cursor = connexion.cursor()
+    cursor.execute(requete_sql)
+    connexion.commit()
+    connexion.close()
+    
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE ET RETOURNE QUELQUE CHOSE(READ) 
+def requete_recuperation(requete):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    data = pd.read_sql(requete,con=connexion)
+    connexion.close()
+    return data
+    
+------------------------------------------------------------------------------
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE NON PARTITIONNER 
+def insert_data(table, dataframe,schema='dim'):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    engine = create_engine('postgresql+psycopg2://'+user+':'+password+'@'+host+':'+port+'/'+db)
+    dataframe.to_sql(table, engine,schema=schema, if_exists='append',index=False)
+    connexion.commit()
+    connexion.close()
+
+#FONCTION QUI CREER LA PARTITION DU TABLE PARTITIONNER
+def subtable(table,jour,schema='dim'):
+    """ Fonction pour ajouter une nouvelle partition, correspondant à une date donnée,
+        à une table dans Postgresql """
+    # On transforme et formate d'abord le jour pour éviter les erreurs de format
+    #jour = timestr(jour)
+    # On change ensuite le jour en une date
+    #jour = datetime.date(datetime.datetime.strptime(jour,'%Y/%m/%d'))
+    # On récupère un string du jour pour l'utiliser dans le nom de la partition
+    sjour = str(jour)
+    # On formate le string obtenu pour éviter les erreurs dans Postgresql
+    s_jour = sjour.replace('-','_',2)
+    # On fait la requete dans Postgresql
+    requete = 'create table dim.'+table+'_'+s_jour+' partition of dim.'            +table+' for values in (\''+sjour+'\');'
+    try:
+        requete = 'create table '+schema+'.'+table+'_'+s_jour+' partition of '+schema+'.'            +table+' for values in (\''+sjour+'\');'
+    except:
+        0
+    requete_sans_retour(requete)
+    return table+'_'+s_jour
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE PARTITIONNER 
+def insertion_table_partitionner(table,date,donnee,schema='dim'):
+    """ Fonction pour insérer de nouvelles données dans une nouvelle partition
+        d'une table Postgresql """
+    # On transforme la date en string que l'on va utiliser pour créer le nom de la partition
+    date = str(date)
+    # On vérifie si la partition existe déja
+    requete = 'select * from '+schema+'.'+table+' where date=\''+date+'\''
+    # On met le dataframe résultant de la requete dans la variable y
+    y = requete_recuperation(requete)
+    # On teste si le dataframe obtenu est vide, c'est-à-dire qu'il n'y a pas encore de
+    # partition pour cette date
+    # Si y est vide, alors on vérifie si les données à insérer ne sont pas vide
+    if donnee.empty:
+        # Si c'est le cas, on ne fait rien car il n'y a rien à insérer
+        pass
+    else:
+        # Si les données à insérer ne sont pas vide, on crée la partition
+        try:
+            stable = subtable(table,date.replace('-','_'))
+        except Exception as e:
+            print(e)
+            stable = table+'_'+date.replace('-','_')
+        # Ensuite on insère les données
+        insert_data(stable, donnee)
+        
+        ----------------------------------------------------------------------
+        
+injection = pd.read_excel(path+file)
+columns = ['cible', 'fiche_injecter', 'fiche_retirer', 'cd_campagne', 'date',
+           'campagne_client_correspondant', 'type_marche', 'zone']
+injection = pd.read_excel(path+file)
+injection.columns = columns
+injection['date'] = [str(i).split()[0] for i in list(injection['date'])]
+injection = injection[injection['date'].notna()]
+
+      ---------------------------------------------------------------
+      
+ date_a_inserer = list(set(injection['date']))
+ 
+       ------------------------------------------------------------
+       
+  injection2 = injection.copy()
+for date in date_a_inserer:
+    #convertion de la date en str
+    date = str(date).split()[0]
+    #filtre pour prendre les dates une par une
+    injection3 = injection2[injection2['date']==date].copy()
+    #déclaration des elements de la table
+    schema = 'dim'
+    table = 'new_injection_de_fiche'
+    s_jour = date.replace('-','_')
+    # requete de création de partition
+    requete = 'create table '+schema+'.'+table+'_'+s_jour+' partition of '+schema+'.'            +table+' for values in (\''+date+'\');'
+    try:
+        # si la partition existe déjà, on ne crée pas
+        requete_sans_retour(requete)
+    except:
+        # on passe ici si la partition existe déjà, ainsi, on efface ces anciennes données
+        requete_del = 'delete from '+schema+'.'+table+" where date in ('{}');".format(date)
+        # commit
+        requete_sans_retour(requete_del)
+    #insertion des données
+    insert_data('new_injection_de_fiche', injection3,schema='dim')
+    
+    
