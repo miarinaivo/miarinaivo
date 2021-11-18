@@ -1,0 +1,26 @@
+import pandas as pd
+import os
+import numpy
+from sqlalchemy import create_engine
+import psycopg2
+
+path = "\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\"
+file = "valeure status.xlsx"
+
+df1 = pd.read_excel(path+file)
+
+df1.columns = [i.lower() for i in list(df1.columns)]
+
+------------------------------------
+
+conn = psycopg2.connect(
+    host = '10.216.15.247',
+    user = 'focus_admin',
+    password = 'focus_admin_pass#',
+    database = 'canalplus'
+)
+print("Connecter!")
+
+engine = create_engine('postgresql+psycopg2://focus_admin:focus_admin_pass#@10.216.15.247:5432/canalplus')
+df1.to_sql('valeur_status', engine, schema = 'dim',if_exists='append',index=False )
+conn.close()
