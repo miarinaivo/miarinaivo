@@ -1,0 +1,132 @@
+import pandas as pd
+from datetime import datetime , timedelta
+from time import strftime
+from time import gmtime
+import os
+import numpy
+import glob
+from sqlalchemy import create_engine
+import psycopg2
+---------------------------------------------
+def lib_detail(change):
+    dict_lib_detail={
+        'Abandoned Call hang-up':'Appel raccroché',
+        'Call Abandoned after hold time':'Appel raccroché',
+        'Repondeur System':'Répondeur',
+        'UnreachableLimit':'Injoingnable permanent',
+        'Wrong Number System':'Faux numéro',
+        'Fax':'Injoingnable permanent',
+        'Busy':'Occupé',
+        "Déjà abonné à l--offre proposée":"Déjà abonné à l'offre proposée",
+        "Dispose déjà d--un autre contrat cash actif":"Dispose déjà d'un contrat TV chez la concurrence",
+        "Dispose déjà d--un contrat TV chez la concurrenc":"Dispose déjà d'un autre contrat cash actif",
+        "Problème d--installation (parabole HS, réception":"Problème d'installation (parabole HS, réception..)",
+        "Hors cible - Pas d--adresse mail":"Hors cible - Pas d'adresse mail",'Direct AM':'Répondeur'
+        
+    }
+    try: 
+        return dict_lib_detail[change]
+    except: return change
+
+def ETTAT_trans(change3):
+    if (change3 =="SYSTEME"):
+        return "SYSTEME"
+    elif (change3=="à rappeler"):
+        return "INJOIGNABLE"
+    elif (change3=="répondeur"):
+        return "SYSTEME"
+    elif (change3=="relance"):
+        return "INJOIGNABLE"
+    elif (change3=="faux numéro"):
+        return "INJOIGNABLE"
+    elif (change3=="rappel personnel"):
+        return "INJOIGNABLE"
+    elif (change3=="A rappeler"):
+        return "INJOIGNABLE"
+    elif (change3=="Occupé"):
+        return "INJOIGNABLE"
+    elif (change3=="Absent"):
+        return "INJOIGNABLE"
+    elif (change3=="Injoingnable permanent"):
+        return "Injoingnable permanent"
+    else:
+        return "JOIGNABLE"
+
+def Status2(change2):
+    dict_Status2={
+        "Abandoned Call hang-up":"SYSTEME",
+        "Call Abandoned after hold time":"SYSTEME",
+        "Absent":"SYSTEME",
+        "Repondeur System":"SYSTEME",
+        "Busy":"SYSTEME",
+        "UnreachableLimit":"SYSTEME",
+        "Wrong Number System":"SYSTEME",
+        "répondeur":"SYSTEME",
+        "Fax":"Injoingnable permanent"
+        
+    }
+    try: 
+        return dict_Status2[change2]
+    except: return change2
+    
+def dict_mois(numb):
+    mm = {1:"JANVIER",2:"FEVRIER",3:"MARS",4:"AVRIL",
+          5:"MAI",6:"JUIN",7:"JUILLET",8:"AOÛT",
+          9:"SEPTEMBRE",10:"OCTOBRE",11:"NOVEMBRE",12:"DECEMBRE"
+         }
+    return mm[numb]
+    
+----------------------------------------
+
+datyy = "30092021"
+path = "\\\MGCANTFS01\\wfm-data\\04-CANAL\\CANAL INTER AS\\sauvegarde\\2021\\SEPTEMBRE\\"+datyy+"\\extraction\\"
+destination ="\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\inter as neon\\septembre\\"
+
+----------------------------------------
+
+liste = []
+for f in glob.glob(path+"*.csv"):
+    data = pd.read_csv(f , sep=";", encoding="latin1")
+    data['libdetail']=[[j,i] [str(j)=='nan'] for i,j in zip(data['LIB_STATUS'],data['LIB_DETAIL'])]
+    data['libdetail']=[lib_detail(i) for i in data['libdetail']]
+    data.loc[data['libdetail'].str.contains('ipt', na=False), 'libdetail'] = 'Faux numéro'
+    data['Status2']=[i for i in data['LIB_STATUS']]
+    data['Status2']=[Status2(i) for i in data['Status2']]
+    data['ETTAT']=[i for i in data['Status2']]
+    data['ETTAT2']=[ETTAT_trans(i) for i in data['ETTAT']]
+    data['DATe'] = pd.to_datetime(data['DATE'],format = "%Y%m%d")
+
+    liste.append(data)
+
+s = pd.concat(liste, sort = False,ignore_index=True).copy()
+df = pd.concat(liste, sort = False,ignore_index=True)
+df["DATY"] = df["DATe"] - timedelta(days = 1)
+df["DATy"] = [[i,k] [j<500] for i,j,k in zip(df['DATe'],df['HEURE'],df["DATY"])]
+df["DATy"] = [str(i).split()[0] for i in list(df['DATy'])]
+df['ANNEE'] = df['DATe'].dt.strftime("%Y")
+df['MOIS'] = df['DATe'].dt.strftime("%m")
+df['MOIS'] = df['MOIS'].astype(int)
+df['MOIS']=[dict_mois(i) for i in df['MOIS']]
+df["SEMAINE"]= "S"+df['DATe'].dt.strftime("%U")
+df["HEURE2"] = [str(i).zfill(4)[:2] + ':' +str(i).zfill(4)[2:] for i in df["HEURE"]]
+df["TRANCHE_HORAIRE"] = [ str(i).split(':')[0]+':00-'+str(int(str(i).split(':')[0])+1).zfill(2)+':00' for i in df["HEURE2"]]
+    
+data_final = df[['numabo','numabont','zone','PRIORITE','DATE','HEURE', 'prenom', 'nom', 'TV', 'ID_TV','cible',
+                 'DUREE','NBAPPELS','NIVABS','LIB_STATUS','LIB_DETAIL','libdetail',
+                 'Status2', 'ETTAT2', 'ANNEE', 'MOIS', 'SEMAINE','DATy','HEURE2','TRANCHE_HORAIRE']]
+data_final.columns = [i.lower() for i in list(data_final.columns)]
+data_final.to_excel(destination+"canal_neon"+datyy+".xlsx", index = False)
+
+print("YaYa")
+conn = psycopg2.connect(
+    host = '10.216.15.247',
+    user = 'focus_admin',
+    password = 'focus_admin_pass#',
+    database = 'canalplus'
+)
+print("Connecter!")
+
+engine = create_engine('postgresql+psycopg2://focus_admin:focus_admin_pass#@10.216.15.247:5432/canalplus')
+data_final.to_sql('inter_as_neon', engine, schema = 'dim',if_exists='append',index=False )
+conn.close()
+
