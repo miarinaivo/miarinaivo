@@ -1,0 +1,191 @@
+import pandas as pd
+from datetime import datetime as dt
+import os
+import numpy
+import glob
+from sqlalchemy import create_engine
+import psycopg2
+liste1 = []
+liste2 = []
+------------------------------------
+path = "\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\inter as heure\\"
+exo = "neon_canalplus_31082021.csv"
+------------------------------------
+date = exo.split(".")[-2].split("_")[-1]
+d = date[:2]
+m = date[2:4]
+y = date[4:]
+
+----------------------------------
+
+data = pd.read_csv(path+exo , sep=";", encoding="latin1")
+data.columns = data.iloc[1]
+data = data[2:]
+data.columns = ['campagnes','agent']+list(data.columns)[2:]
+L = [list(data['campagnes'])[0]]
+for i in list(data['campagnes'])[1:]:
+    if str(i) == 'nan':
+        L.append(L[-1])
+    else:
+        L.append(i)
+data['campagnes'] = L
+
+l = ['campagnes','agent','(-1) Login','(0) Logout','(7) After call','(8) Alerting',
+     '(9) Search','(11) TemporaryNotReady','(96) Previewing','(98) Ready blended',
+     '(99) Dialing','(100) Online','(3) System pause',
+     '(300) Pause 10mn','(301) Pause Briefe','(302) Pause Formation','(304) Pause Personnel','(308) Pause Consultation',
+     '(309) Pause 1H','SumPause','ProdTime','LogTime','TauxProd']
+
+col_number = 0
+for i in list(data.columns)[::-1]:
+    if str(i)!='nan':
+        break
+col_number += 1
+for i in l:
+    try:
+        data[i]
+    except:
+        data[i] = '00:00:00'
+
+
+data = data[[i for i in list(data.columns)if str(i)!='nan']]
+data.insert(0,'date',pd.to_datetime('/'.join([d, m, y])))
+
+data["log"]=[i.split(") ")[0].split("(")[1] for i in data["agent"]]
+data["Nom_agent"]=[i.split(") ")[1] for i in data["agent"]]
+data = data[~data['agent'].str.contains('TOTAL')]
+
+data['date'] = [str(i).split()[0] for i in list(data['date'])]
+data['date'] = pd.to_datetime(data['date'] ,format='%Y-%m-%d').dt.date
+data['annee'] = pd.DatetimeIndex(data['date']).year
+data['mois'] = pd.DatetimeIndex(data['date']).month
+data['semaine'] = pd.DatetimeIndex(data['date']).week
+
+    
+def dict_mois(numb):
+    mois = {1:"JANVIER",2:"FEVRIER",3:"MARS",4:"AVRIL",
+          5:"MAI",6:"JUIN",7:"JUILLET",8:"AOÛT",
+          9:"SEPTEMBRE",10:"OCTOBRE",11:"NOVEMBRE",12:"DECEMBRE"
+         }
+    return mois[numb]
+data['mois']=[dict_mois(i) for i in data['mois']]
+
+data = data[['date','annee','mois','semaine', 'campagnes', 'Nom_agent', 'log',
+           '(-1) Login', '(0) Logout','(7) After call', '(8) Alerting', '(9) Search',
+           '(11) TemporaryNotReady', '(96) Previewing', '(98) Ready blended',
+           '(99) Dialing', '(100) Online', '(3) System pause', '(300) Pause 10mn',
+           '(301) Pause Briefe', '(302) Pause Formation', '(304) Pause Personnel',
+           '(308) Pause Consultation', '(309) Pause 1H', 'SumPause', 'ProdTime',
+           'LogTime', 'TauxProd']]
+
+data.rename(columns = {'(-1) Login':'login','(0) Logout':'logout','(7) After call':'after_call','(8) Alerting':'alerting',
+ '(9) Search':'search','(11) TemporaryNotReady':'temporarynotready','(96) Previewing':'previewing','(98) Ready blended':'ready_blended',
+ '(99) Dialing':'dialing','(100) Online':'online','(3) System pause':'system_pause','(300) Pause 10mn':'pause_10mn',
+ '(301) Pause Briefe':'pause_briefe','(302) Pause Formation':'pause_formation','(304) Pause Personnel':'pause_personnel',
+ '(308) Pause Consultation':'pause_consultation','(309) Pause 1H':'pause_1h','SumPause':'sum_pause','ProdTime':'prod_time',
+ 'LogTime':'log_time','TauxProd':'taux_prod','Nom_agent':'nom_agent'},inplace = True)
+ 
+ --------------------------------
+ 
+ def connexion_base(db_name,username,host,port,password):
+    """ Fonction pour se connecter à Postgresql """
+    connexion = psycopg2.connect(database=db_name,
+                              user=username,
+                              host=host,
+                              port=port,
+                              password=password
+                              )
+    return connexion
+
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE MAIS NE RETOURNE PAS DE CHOSE(UPDATE OU DELETE)
+def requete_sans_retour(requete_sql):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    cursor = connexion.cursor()
+    cursor.execute(requete_sql)
+    connexion.commit()
+    connexion.close()
+    
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE ET RETOURNE QUELQUE CHOSE(READ) 
+def requete_recuperation(requete):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    data = pd.read_sql(requete,con=connexion)
+    connexion.close()
+    return data
+
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE NON PARTITIONNER 
+def insert_data(table, dataframe,schema='dim'):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    engine = create_engine('postgresql+psycopg2://'+user+':'+password+'@'+host+':'+port+'/'+db)
+    dataframe.to_sql(table, engine,schema=schema, if_exists='append',index=False)
+    connexion.commit()
+    connexion.close()
+
+#FONCTION QUI CREER LA PARTITION DU TABLE PARTITIONNER
+def subtable(table,jour,schema='dim'):
+    """ Fonction pour ajouter une nouvelle partition, correspondant à une date donnée,
+        à une table dans Postgresql """
+    # On transforme et formate d'abord le jour pour éviter les erreurs de format
+    #jour = timestr(jour)
+    # On change ensuite le jour en une date
+    #jour = datetime.date(datetime.datetime.strptime(jour,'%Y/%m/%d'))
+    # On récupère un string du jour pour l'utiliser dans le nom de la partition
+    sjour = str(jour)
+    # On formate le string obtenu pour éviter les erreurs dans Postgresql
+    s_jour = sjour.replace('-','_',2)
+    # On fait la requete dans Postgresql
+    requete = 'create table dim.'+table+'_'+s_jour+' partition of dim.'            +table+' for values in (\''+sjour+'\');'
+    requete = 'create table '+schema+'.'+table+'_'+s_jour+' partition of '+schema+'.'            +table+' for values in (\''+sjour+'\');'
+    requete_sans_retour(requete)
+    return table+'_'+s_jour
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE PARTITIONNER 
+def insertion_table_partitionner(table,date,donnee,schema='dim'):
+    """ Fonction pour insérer de nouvelles données dans une nouvelle partition
+        d'une table Postgresql """
+    # On transforme la date en string que l'on va utiliser pour créer le nom de la partition
+    date = str(date)
+    # On vérifie si la partition existe déja
+    requete = 'select * from '+schema+'.'+table+' where date=\''+date+'\''
+    # On met le dataframe résultant de la requete dans la variable y
+    y = requete_recuperation(requete)
+    # On teste si le dataframe obtenu est vide, c'est-à-dire qu'il n'y a pas encore de
+    # partition pour cette date
+    # Si y est vide, alors on vérifie si les données à insérer ne sont pas vide
+    if donnee.empty:
+        # Si c'est le cas, on ne fait rien car il n'y a rien à insérer
+        pass
+    else:
+        # Si les données à insérer ne sont pas vide, on crée la partition
+        try:
+            stable = subtable(table,date.replace('-','_'))
+        except Exception as e:
+            print(e)
+            stable = table+'_'+date.replace('-','_')
+        # Ensuite on insère les données
+        insert_data(stable, donnee)
+    
+---------------------------------------
+
+date_a_inserer = list(set(data['date']))
+----------------------------------------
+
+for date in date_a_inserer:
+    data1 = data[data['date']==date].copy()
+    requete_sans_retour("delete from dim.new_inter_as_heure where date='{}'".format(str(date)))
+    insertion_table_partitionner('new_inter_as_heure',str(date),data1)
