@@ -1,0 +1,118 @@
+import pandas as pd
+import os
+import numpy
+from sqlalchemy import create_engine
+import psycopg2
+
+path = '\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\'
+file = 'correspondance.xlsx'
+
+df = pd.read_excel(path+file)
+
+df.rename(columns = {"Matricule":"matricule", "LogHermès":"log_hermes", "Superviseurdédié":"superviseur_dedie", "Nom et prénoms":"nom_prenoms"},inplace = True)
+
+
+df1 =df
+df1["nom"]= [i.split(" ")[0] for i in df1["nom_prenoms"]]
+df1["prenoms"]= [' '.join(i.split(" ")[1:]) for i in df1["nom_prenoms"]]
+
+del df['nom_prenoms']
+
+----------------------------------------------------------
+
+def connexion_base(db_name,username,host,port,password):
+    """ Fonction pour se connecter à Postgresql """
+    connexion = psycopg2.connect(database=db_name,
+                              user=username,
+                              host=host,
+                              port=port,
+                              password=password
+                              )
+    return connexion
+
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE MAIS NE RETOURNE PAS DE CHOSE(UPDATE OU DELETE)
+def requete_sans_retour(requete_sql):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    cursor = connexion.cursor()
+    cursor.execute(requete_sql)
+    connexion.commit()
+    connexion.close()
+    
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE ET RETOURNE QUELQUE CHOSE(READ) 
+def requete_recuperation(requete):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    data = pd.read_sql(requete,con=connexion)
+    connexion.close()
+    return data
+
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE NON PARTITIONNER 
+def insert_data(table, dataframe,schema='dim'):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    engine = create_engine('postgresql+psycopg2://'+user+':'+password+'@'+host+':'+port+'/'+db)
+    dataframe.to_sql(table, engine,schema=schema, if_exists='append',index=False)
+    connexion.commit()
+    connexion.close()
+
+#FONCTION QUI CREER LA PARTITION DU TABLE PARTITIONNER
+def subtable(table,jour,schema='dim'):
+    """ Fonction pour ajouter une nouvelle partition, correspondant à une date donnée,
+        à une table dans Postgresql """
+    # On transforme et formate d'abord le jour pour éviter les erreurs de format
+    #jour = timestr(jour)
+    # On change ensuite le jour en une date
+    #jour = datetime.date(datetime.datetime.strptime(jour,'%Y/%m/%d'))
+    # On récupère un string du jour pour l'utiliser dans le nom de la partition
+    sjour = str(jour)
+    # On formate le string obtenu pour éviter les erreurs dans Postgresql
+    s_jour = sjour.replace('-','_',2)
+    # On fait la requete dans Postgresql
+    requete = 'create table dim.'+table+'_'+s_jour+' partition of dim.'            +table+' for values in (\''+sjour+'\');'
+    requete = 'create table '+schema+'.'+table+'_'+s_jour+' partition of '+schema+'.'            +table+' for values in (\''+sjour+'\');'
+    requete_sans_retour(requete)
+    return table+'_'+s_jour
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE PARTITIONNER 
+def insertion_table_partitionner(table,date,donnee,schema='dim'):
+    """ Fonction pour insérer de nouvelles données dans une nouvelle partition
+        d'une table Postgresql """
+    # On transforme la date en string que l'on va utiliser pour créer le nom de la partition
+    date = str(date)
+    # On vérifie si la partition existe déja
+    requete = 'select * from '+schema+'.'+table+' where date=\''+date+'\''
+    # On met le dataframe résultant de la requete dans la variable y
+    y = requete_recuperation(requete)
+    # On teste si le dataframe obtenu est vide, c'est-à-dire qu'il n'y a pas encore de
+    # partition pour cette date
+    # Si y est vide, alors on vérifie si les données à insérer ne sont pas vide
+    if donnee.empty:
+        # Si c'est le cas, on ne fait rien car il n'y a rien à insérer
+        pass
+    else:
+        # Si les données à insérer ne sont pas vide, on crée la partition
+        try:
+            stable = subtable(table,date.replace('-','_'))
+        except Exception as e:
+            print(e)
+            stable = table+'_'+date.replace('-','_')
+        # Ensuite on insère les données
+        insert_data(stable, donnee)
+        
+ ---------------------------------------------------------------
+ 
+ insert_data('correspondance_rh', df,schema='dim')
