@@ -1,0 +1,128 @@
+import pandas as pd
+import psycopg2
+from sqlalchemy import create_engine
+-----------------------------
+
+def connexion_base(db_name,username,host,port,password):
+    """ Fonction pour se connecter à Postgresql """
+    connexion = psycopg2.connect(database=db_name,
+                              user=username,
+                              host=host,
+                              port=port,
+                              password=password
+                              )
+    return connexion
+
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE MAIS NE RETOURNE PAS DE CHOSE(UPDATE OU DELETE)
+def requete_sans_retour(requete_sql):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    cursor = connexion.cursor()
+    cursor.execute(requete_sql)
+    connexion.commit()
+    connexion.close()
+    
+#FONCTION QUI ENVOIE DU REQUETE VERS LA BASE ET RETOURNE QUELQUE CHOSE(READ) 
+def requete_recuperation(requete):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    data = pd.read_sql(requete,con=connexion)
+    connexion.close()
+    return data
+
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE NON PARTITIONNER 
+def insert_data(table, dataframe,schema='dim'):
+    db = 'canalplus'
+    user = 'focus_admin'
+    host = '10.216.15.247'
+    port = '5432'
+    password = 'focus_admin_pass#'
+    connexion = connexion_base(db,user,host,port,password)
+    engine = create_engine('postgresql+psycopg2://'+user+':'+password+'@'+host+':'+port+'/'+db)
+    dataframe.to_sql(table, engine,schema=schema, if_exists='append',index=False)
+    connexion.commit()
+    connexion.close()
+
+#FONCTION QUI CREER LA PARTITION DU TABLE PARTITIONNER
+def subtable(table,jour,schema='dim'):
+    """ Fonction pour ajouter une nouvelle partition, correspondant à une date donnée,
+        à une table dans Postgresql """
+    # On transforme et formate d'abord le jour pour éviter les erreurs de format
+    #jour = timestr(jour)
+    # On change ensuite le jour en une date
+    #jour = datetime.date(datetime.datetime.strptime(jour,'%Y/%m/%d'))
+    # On récupère un string du jour pour l'utiliser dans le nom de la partition
+    sjour = str(jour)
+    # On formate le string obtenu pour éviter les erreurs dans Postgresql
+    s_jour = sjour.replace('-','_',2)
+    # On fait la requete dans Postgresql
+    requete = 'create table dim.'+table+'_'+s_jour+' partition of dim.'            +table+' for values in (\''+sjour+'\');'
+    requete = 'create table '+schema+'.'+table+'_'+s_jour+' partition of '+schema+'.'            +table+' for values in (\''+sjour+'\');'
+    requete_sans_retour(requete)
+    return table+'_'+s_jour
+
+#FONCTION QUI INSERT DES DONNEES VERS LA TEBLE PARTITIONNER 
+def insertion_table_partitionner(table,date,donnee,schema='dim'):
+    """ Fonction pour insérer de nouvelles données dans une nouvelle partition
+        d'une table Postgresql """
+    # On transforme la date en string que l'on va utiliser pour créer le nom de la partition
+    date = str(date)
+    # On vérifie si la partition existe déja
+    requete = 'select * from '+schema+'.'+table+' where date=\''+date+'\''
+    # On met le dataframe résultant de la requete dans la variable y
+    y = requete_recuperation(requete)
+    # On teste si le dataframe obtenu est vide, c'est-à-dire qu'il n'y a pas encore de
+    # partition pour cette date
+    # Si y est vide, alors on vérifie si les données à insérer ne sont pas vide
+    if donnee.empty:
+        # Si c'est le cas, on ne fait rien car il n'y a rien à insérer
+        pass
+    else:
+        # Si les données à insérer ne sont pas vide, on crée la partition
+        try:
+            stable = subtable(table,date.replace('-','_'))
+        except Exception as e:
+            print(e)
+            stable = table+'_'+date.replace('-','_')
+        # Ensuite on insère les données
+        insert_data(stable, donnee)
+    ----------------------------------------------------
+    
+    df1 = requete_recuperation("select * from dim.inter_as_heure")
+df2 = requete_recuperation("select * from dim.injection_de_fiche")
+df3 = requete_recuperation("select * from dim.correspondance_rh")
+df4 = requete_recuperation("select * from dim.inter_as_neon")
+
+------------------------------------
+df5 = pd.merge(df1,df2,how='left',on='campagnes')
+------------------------------------
+dt = df5[['nom_agent','log','mois','semaine','annee','zone','cd_campagne','campagnes','date_x',
+          'campagne_client_correspondant','sum_pause','login','logout','log_time','prod_time']]
+          -------------------------------------
+          
+ df6 = pd.merge(dt,df3,how='left',on='log')
+ -------------------------------------
+dt1 = df6[['nom_agent','log','matricule','superviseur_dedie','mois','semaine','annee','zone','campagnes','date_x',
+           'cd_campagne','campagne_client_correspondant','login','logout','sum_pause','log_time','prod_time']]
+dt1.drop_duplicates(keep = 'first', inplace=True)
+          ----------------------------------------
+ df7 = pd.merge(dt1,df4,how='left',on='nom_agent')
+ -------------------------------
+ dt2 = df7[['nom_agent','log_x','matricule','superviseur_dedie','mois_x','semaine_x','annee_x','zone_x','campagnes_x',
+           'date_x','cd_campagne','campagne_client_correspondant','login','logout','sum_pause','log_time','prod_time']]
+dt2.drop_duplicates(keep = 'first', inplace=True)
+
+------------------------------------------
+dt2.rename(columns = {'log_x':'log','mois_x':'mois', 'semaine_x':'semaine', 'annee_x':'annee', 'zone_x':'zone','campagnes_x':'campagnes','date_x':'date'},inplace = True)
+-----------------------------------
+
+insert_data('join_heure', dt2, schema='dim')
