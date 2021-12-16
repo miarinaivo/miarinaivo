@@ -1,0 +1,13 @@
+data = pd.read_excel(path + fichier)
+data = data[['DATE','campagne','LOG AGENT','ETAT','compte']]
+data_f = data.copy()
+data_f = data_f.fillna("KO")
+data_vb =  data_f.groupby(['DATE','campagne','LOG AGENT']).sum().reset_index()
+data_vn = data_f[~data_f['ETAT'].str.contains('KO')]
+data_vn =  data_vn.groupby(['DATE','campagne','LOG AGENT']).sum().reset_index()
+col_n = ['DATE','campagne','ID_TV','nb_valeur_net']
+col_b = ['DATE','campagne','ID_TV','nb_valeur_brute']
+data_vb.columns = col_b
+data_vn.columns = col_n
+data_final_vent = pd.merge(data_vb,data_vn,how = "left")
+data_final_vent.columns = [i.lower() for i in list(data_final_vent.columns)]
