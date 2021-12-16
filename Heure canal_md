@@ -1,0 +1,54 @@
+def repository_csv(path):
+    files = []
+    files2 = []
+    for r, d, f in os.walk(path):
+        for file in f:
+            if '.csv' in file:
+                files.append(os.path.join(r, file))
+    for i in files:
+        files2.append("file://"+i)    
+    return files
+def traitement_canal_md(path):
+    data = pd.read_csv(path , sep = ";" ,encoding = "latin1")
+    data["temp_total_en_heure"]=[i/24 for i in data["temp_total"]]
+    del data["temp_total"]
+    data["campagne"] = [i.replace("_OCT","") for i in data["campagne"]]
+    data_f=data.copy()
+    data_f['campagne'] = [i[-4:] for i in data_f['campagne']]
+    data_f["log"] = [["Resumé",i[5:10]] ['Agent' in i] for i in data_f['agent']]
+    data_f["nom"] = [["Resumé",i[12:].replace(',','')] ['Agent' in i] for i in data_f['agent']]
+    data_f = data_f[~data_f["agent"].str.contains('Résumé')]
+    calonne_f = ["campagne","daty","agent","lib_stat","nature","duree","id_tv","nom"]
+    data_f.columns = calonne_f
+
+    RRRR  = "\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\CANAL+ MD\\"
+    hhhh = pd.read_excel(RRRR+"correspondance_aux_test.xlsx")
+    hhhh.columns = ["lib_stat","aux"]
+    gtg  = pd.merge(data_f,hhhh,how = "left")
+
+    gtg['aux'] = [[i,""] [str(j) =="total"] for i,j in zip(gtg['aux'],gtg['nature'])]
+    gtg["libel_status"] = [[i,j] [str(i)=="" or str(i)=='nan'] for i,j in zip(gtg['aux'],gtg['lib_stat'])]
+    calonn_final = [ 'daty','campagne','id_tv','nom','libel_status','duree' ]
+    gtg = gtg[calonn_final]
+    xxx = gtg.groupby(['daty','campagne','id_tv','nom','libel_status']).sum().reset_index()
+
+    data_hh = pd.pivot_table(xxx, values='duree', index=['daty','campagne','id_tv','nom'],columns=['libel_status'], aggfunc=np.sum).reset_index()
+    data_T = data_f[['campagne', 'daty', 'lib_stat', 'nature', 'duree', 'id_tv','nom']]
+    data_T = data_T[data_T['nature'].str.contains('total')]
+    data_Tf =  data_T.groupby(['daty','campagne','id_tv','nom']).sum().reset_index()
+    data_Tf.columns = ['daty', 'campagne', 'id_tv', 'nom', 'H_total']
+    data_Tf.rename(columns = {"daty":"date"},inplace = True)
+    data_final = pd.merge(data_hh,data_Tf,how = "left")
+    for i in ['En attente', 'Formation_Continue', 'Management_Debrifing', 'Pause', 'Post-travail','Sonnerie', 'pause']:
+        if i not in data_final.columns:
+            data_final[i] = None
+    data_final = data_final[['date', 'campagne', 'id_tv', 'nom',
+             'Attente', 'En attente', 'Formation_Continue', 'Management_Debrifing', 
+             'Pause', 'Post-travail','Sonnerie', 'pause','H_total']]
+    data_final.rename(columns = {"En attente":"en_attente","Post-travail":"post_travail","Pause":"pause_p"},inplace = True)
+    data_final.columns = [i.lower() for i in list(data_final.columns)]
+    return data_final
+    liste = []
+for p in repository_csv(path):
+    liste +=[traitement_canal_md(p)]
+final = pd.concat(liste,ignore_index=True)
