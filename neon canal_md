@@ -1,0 +1,31 @@
+def replaceer(s):
+    if str(s) == 'nan':return '4480'
+    else: return s
+def spliter(s):
+    s = str(s)
+    try:
+        return s.split('_')[5]
+    except:
+        return s
+        data_f = pd.read_excel(path+file)
+data_f = data_final.copy()
+data_f['APS_FILENAME'] = [spliter(i) for i in data_f['APS_FILENAME']]
+data_f['APS_FILENAME'] = [replaceer(i) for i in list(data_f['APS_FILENAME'])]
+data_f['DATE'] = [pd.to_datetime(str(i), format ='%Y-%m-%d').date() for i in data_f['DATE']]
+data_f['MOIS'] = [i.strftime("%B") for i in data_f['DATE']]
+data_f['MOIS'] = pd.to_datetime(data_f['DATE']).dt.month_name(locale = 'French')
+data_f['SEMAINE'] = ["S"+i.strftime("%W").zfill(2) for i in data_f['DATE']]
+data_f['ANNEE'] = [i.strftime("%Y") for i in data_f['DATE']]
+data_f['TV'] = [str(i).replace(',','') for i in data_f['TV']]
+sorc = '\\\MGCANTFS01\\wfm-data\\Stages\\Jhania\\CANAL+ MD\\'
+
+data_v  = pd.read_excel(sorc+"correspondance_aux_test.xlsx", sheet_name = 'Feuil2')
+gtg = pd.merge(data_f,data_v,how = "left")
+calonn_final = [ 'DATE','MOIS','SEMAINE','ANNEE','APS_FILENAME','ID_TV','TV','ACCORD','REFUS','CA','CNA','CLOS']
+gtg = gtg[calonn_final]
+data_final_prod = gtg.groupby(['DATE','APS_FILENAME','MOIS','SEMAINE','ANNEE','ID_TV','TV']).sum().reset_index()
+
+data_final_prod.columns = [i.lower() for i in list(data_final_prod.columns)]
+data_final_prod.rename(columns = {"aps_filename":"campagne", "tv":"nom"},inplace = True)
+
+data_final_prod['nom'] = [str(i).replace(',','') for i in data_final_prod['nom']]
