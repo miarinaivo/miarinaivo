@@ -1,0 +1,5 @@
+df1 = requete_recuperation("select * from dim.neon_prod")
+df2 = requete_recuperation("select * from dim.heure_md")
+df3 = requete_recuperation("select * from dim.suivi_vente")
+data = pd.merge(df1,df2,how='left',on = ['date','nom','id_tv','campagne'])
+data_f = pd.merge(data,df3,how='left',on = ['date','id_tv','campagne'])
