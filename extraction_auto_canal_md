@@ -1,0 +1,325 @@
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+import time
+from selenium.webdriver.support.ui import Select
+from subprocess import call
+import datetime
+import pathlib
+import os
+import sys
+import traceback
+from datetime import timedelta
+from subprocess import *
+import pandas as pd
+import shutil
+import locale
+import math
+locale.setlocale(locale.LC_TIME,'fr')
+
+def repository_xls(path):
+    files = []
+    files2 = []
+    for r, d, f in os.walk(path):
+        for file in f:
+            if '.xls' in file:
+                files.append(os.path.join(r, file))
+    for i in files:
+        files2.append("file://"+i)
+    return files
+
+def getAllrepository(path):
+    files = []
+    files2 = []
+    for r, d, f in os.walk(path):
+        for file in f:
+            files.append(os.path.join(r, file))
+    for i in files:
+        files2.append("file://"+i)
+    return files
+def checknan(s):
+    try:
+        x = float(s)
+        return math.isnan(x)
+    except:
+        return False
+def str_to_heure(a):
+    heure = float(a.split('h')[0])
+    minute = float(a.split('h')[-1].split("'")[0])
+    seconde = float(a.split('h')[-1].split("'")[-1])
+    heure_total = heure+(minute/60)+(seconde/3600)
+    return heure_total
+def traitement_canalplus_md(path):
+    t = getAllrepository(path)
+    data = []
+    for element in t:
+        try:
+            h = pd.read_excel(element,index=False,header = None,encoding='latin1')
+            h =  h[h[0].notna() | h[1].notna()]
+            h = h[[0,1,4,6,8,10,12,14,16]]
+            h = h.reset_index(level=None, drop=True, inplace=False)
+            campagne = str(h[1][1])
+            date = str(h[0][2]).split()[-1]
+            index = [ j for j in [[['l',i]['Résumé' in str(h[0][i])],i]['Agent' in str(h[0][i])] for i in range(len(h[0]))] if j!='l']
+            index+=[len(h)-1]
+            new_data = pd.DataFrame(columns=['campagne','date','agent','libellé','nature','temp_total'])
+            k = 0
+            for value,key in zip(index,range(len(index)-1)):
+                debut_index = value
+                fin_index = index[key+1]
+                agent = str(h[0][debut_index])
+                for i in range(debut_index+1,fin_index):
+                    libelle = str(h[1][i])
+                    if checknan(h[16][i]):
+                        nature = 'total'
+                    else:
+                        nature = 'détail'
+                    temp_total = str_to_heure(h[6][i])
+                    new_data.loc[k] = [campagne,date,agent,libelle,nature,temp_total]
+                    k+=1
+            data+=[new_data]
+        except:0
+    result = pd.concat(data,ignore_index=True)
+    return result
+    
+    class HERMESS_BYTEL():
+    
+    def __init__(self, email, password, browser='Chrome'):
+        
+        chromeOptions = webdriver.ChromeOptions()
+        x = '\\\MGCantfs01\\wfm-data\\DATA_AUTOMATIQUES\\TEMP1'
+        
+        try:
+            command = 'mkdir '+x
+            call(command, shell = True)
+        except:
+            0
+        try:
+            command = 'mkdir '+x+"\\CANALPLUSMD1"
+            call(command, shell = True)
+        except:
+            0
+        self.path_tmp = x + "\\CANALPLUSMD1\\"
+        self.path_i =  self.path_tmp
+        prefs = {"download.default_directory" : self.path_i}#, 'profile.managed_default_content_settings.javascript': 2}#self.path_tmp}
+        
+        # Store credentials for login
+        self.email = email
+        self.password = password
+        #self.path = str(pathlib.Path().absolute())+'\\'+path
+        self.options = Options()
+        self.options.add_argument("--mute-audio")
+        self.options.add_argument('--ignore-certificate-errors')
+        self.options.add_argument('--ignore-ssl-errors')
+        self.options.add_argument("--start-maximized")
+        self.options.add_experimental_option("prefs",prefs)
+        
+        if browser == 'Chrome':
+            self.driver = webdriver.Chrome(chrome_options=self.options, executable_path="C:/Users/an.ranaivoson/Desktop/chromedriver/chromedriver.exe")
+            self.driver.set_page_load_timeout(3600)
+        elif browser == 'Firefox':
+            # Set it to Firefox
+            self.driver = webdriver.Firefox(executable_path=GeckoDriverManager().install())
+        else:
+            self.driver = webdriver.PhantomJS(phantom)
+    
+    
+    def login(self):
+        #lien vers odigo
+        #lien_suivi = 'http://10.192.20.86/hermes_net_v4/admin/launcher/default.aspx'
+        lien_login = 'http://hermesprod.lancca.com/hermes_net_v4/admin/launcher/launcher.aspx'
+        time.sleep(50)
+        self.driver.get(lien_login)
+        self.email_element = self.driver.find_element_by_id('loginBox')
+        self.email_element.send_keys(self.email) # Give keyboard input
+        self.password_element = self.driver.find_element_by_id('passBox')
+        self.password_element.send_keys(self.password)
+        self.login_button = self.driver.find_element_by_xpath('//*[@id="cadre_login"]/img')
+        self.login_button.click()
+        time.sleep(5)
+        #cliquer sur reporting
+        self.reporting_button = self.driver.find_element_by_xpath('//*[@id="Applications"]/div[3]/div[3]/img')
+        self.reporting_button.click()
+        time.sleep(5)
+        self.driver.switch_to.window(self.driver.window_handles[1])
+        
+    def get_through_page(self):
+        print('debut du programme')
+        time.sleep(50)
+        frame_header = self.driver.find_element_by_id('header')
+        self.driver.switch_to.frame(frame_header)
+        time.sleep(50)
+        #cliquer sur le bouton pour selectionner agent
+        self.login_button = self.driver.find_element_by_id('Mnu_ReportAgent')
+        self.login_button.click()
+        print('agent clicker')
+        time.sleep(5)
+        self.driver.switch_to_default_content()
+        time.sleep(50)
+        #selectionner frame main
+        frame_main = self.driver.find_element_by_id('main')
+        self.driver.switch_to.frame(frame_main)
+        time.sleep(50)
+        #selectionner l'activité par date
+        select = self.driver.find_element_by_xpath('//*[@id="Menu_ReportAgent"]/table/tbody/tr[1]/td[2]/a')
+        select.click()
+        print('rapport detaillé clicker')
+        time.sleep(50)
+        #selectionner la date d'hier
+        date_depart = self.driver.find_element_by_xpath('//*[@id="form_0"]/table[2]/tbody/tr/td[2]/div/table/tbody/tr/td[3]/img')
+        date_depart.click()
+        hier = self.driver.find_element_by_xpath('/html/body/div/div[3]/div')
+        hier.click()
+        time.sleep(50)
+        print('date hier clicker')
+        #cliquer sur l'onglet agent
+        onglet_agent = self.driver.find_element_by_xpath('//*[@id="thumb_buttons"]/td[2]/input')
+        onglet_agent.click()
+        #click sur groupe de supervision
+        time.sleep(2)
+        groupe_de_supervision = self.driver.find_element_by_xpath('//*[@id="div_Agents"]/table[1]/tbody/tr/td[2]')
+        groupe_de_supervision.click()
+        time.sleep(5)
+        #click sur CANAL+MADA
+        try: 
+            canal_mada = self.driver.find_element_by_xpath("//*[@id='scrollDiv_0']/div/div/div[22]/div")
+            self.driver.execute_script("arguments[0].click();",canal_mada)
+        except Exception as e:
+            print(e)
+        time.sleep(30)
+        #selectionner tout
+        #cliquer sur la campagne 
+        list_campagne = ['3517','4451','4461','4440','4480','4600','4650','3600','3650','9602','9820']
+        today=datetime.date.today() 
+        oneday=datetime.timedelta(days=1) 
+        yesterday=str(today-oneday)
+        mois_en_cours = datetime.datetime.strptime(yesterday,'%Y-%m-%d').date().strftime('%B').capitalize()
+        y = '\\\MGCantfs01\\wfm-data\\DATA_AUTOMATIQUES\\DATA\\CANALPLUSMD\\'+mois_en_cours+'\\'
+        try:
+            command = 'mkdir '+y
+            call(command, shell = True)
+        except:0
+        path_copie = y+yesterday+'\\'
+        try:
+            command = 'mkdir '+path_copie
+            call(command, shell = True)
+        except:0
+        for i in range(len(list_campagne)):
+            campagnes = self.driver.find_element_by_xpath('//*[@id="thumb_buttons"]/td[3]/input')
+            campagnes.click()
+            if i==0:    
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3517")]').click()
+            elif i==1:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3517")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4451")]').click()
+            elif i==2:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4451")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4461")]').click()
+            elif i==3:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4461")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4440")]').click()
+            elif i==4:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4440")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4480")]').click()
+            elif i==5:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4480")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4600_OCT")]').click()
+            elif i==6:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4600_OCT")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4650_OCT")]').click()
+            elif i==7:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_4650_OCT")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3600_OCT")]').click()
+            elif i==8:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3600_OCT")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3650_OCT")]').click()
+            elif i==9:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_3650_OCT")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_9602")]').click()
+            else:
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_9602")]').click()
+                self.driver.find_element_by_xpath('//*[@id="list_Campaigns"]//label[contains(text(),"MA_CAS_CANAL_9820")]').click()
+                
+            #cliquer sur le type d'export
+            type_export = self.driver.find_element_by_id('typeButton')
+            type_export.click()
+            time.sleep(2)
+            #selectionner excel
+            select_excel = self.driver.find_element_by_xpath('//*[@id="reportTypeDialog"]/table[2]/tbody/tr/td/table/tbody/tr[3]/td[2]/a')
+            select_excel.click()
+            time.sleep(2)
+            
+            #generer le rapport
+            generer = self.driver.find_element_by_xpath('//*[@id="generateButton"]')
+            generer.click()
+            time.sleep(30)
+            
+            #apres generation rapport executer le lien vers la generation
+            self.driver.switch_to.window(self.driver.window_handles[2])
+            #lien_generating = self.driver.current_url(self.driver.window_handles[1])
+            #self.driver.get(lien_generating)
+            
+            #cliquer sur ouvrir pour telecharger
+            time.sleep(10)
+            x = True
+            while x:
+                try:
+                    ouvrir = self.driver.find_element_by_xpath('//*[@id="content"]/div/div[2]/div[8]/div[4]/span/center/a[1]')
+                    ouvrir.click()
+                    x = False
+                except:0
+            time.sleep(10)
+            #attendre jusqu'à ce que la telechargement est fini
+            liste = repository_xls(self.path_i)
+            while '.crdownload' in ''.join(liste):
+                liste = repository_xls(self.path_i)
+            time.sleep(15)
+
+            #deplacer le fichier telecharger
+            
+            name = list_campagne[i]+'_'+yesterday+'.xls'
+            
+            try:
+                path_s = repository_xls(self.path_i)[0]
+                path_c = path_copie + name
+                shutil.move(path_s, path_c)
+            except:0
+            self.driver.close()
+            #selectionner frame main
+            self.driver.switch_to.window(self.driver.window_handles[1])
+            time.sleep(50)
+            frame_main = self.driver.find_element_by_id('main')
+            self.driver.switch_to.frame(frame_main)
+            time.sleep(50)
+            
+            
+        path_export = y+'global\\'
+        try:
+            command = 'mkdir '+path_export
+            call(command, shell = True)
+        except:0
+        
+        try:
+            print(path_copie)
+            result_canalMD = traitement_canalplus_md(path_copie)
+            result_canalMD.to_csv(path_export+'resultat_'+yesterday+'.csv',encoding='latin1',index=False,sep = ';')
+            time.sleep(15)
+        except Exception as e:
+            print(e)
+            time.sleep(15)
+        
+        time.sleep(5)
+        #fermer tous les fenêtre    
+        for i in self.driver.window_handles:
+            try:
+                self.driver.switch_to.window(i)
+                self.driver.close()
+            except:0
+
+def main():
+    h_b = HERMESS_BYTEL(email='fz.moustaidbillah.cl',password='75vuQn2Y')
+    h_b.login()
+    h_b.get_through_page()
+if __name__ == "__main__":
+    main()
